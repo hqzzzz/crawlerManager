@@ -23,7 +23,7 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [groupBySource, setGroupBySource] = useState(true);
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
-  const [sortBy, setSortBy] = useState<"date" | "timestamp">("date");
+  const [sortBy, setSortBy] = useState<"date" | "timestamp">("timestamp");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [filterHasImage, setFilterHasImage] = useState<"all" | "yes" | "no">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

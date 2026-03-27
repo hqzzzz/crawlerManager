@@ -325,7 +325,7 @@ export function setupRoutes(app: express.Application) {
     try {
       const ownerId = req.query.ownerId;
       const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 1000);
+      const limit = Math.min(parseInt(req.query.limit as string) || 200, 1000);
       const offset = (page - 1) * limit;
       let rows;
       if (ownerId === "admin") {
