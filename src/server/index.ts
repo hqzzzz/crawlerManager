@@ -11,6 +11,7 @@ interface PostData {
   id?: string | number;
   title: string;
   link?: string;
+  url?: string;
   content?: string;
   date?: string;
   image?: string;

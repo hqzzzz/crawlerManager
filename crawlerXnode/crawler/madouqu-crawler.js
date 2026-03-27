@@ -20,8 +20,8 @@ import { URL } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
+//import { HttpsProxyAgent } from 'https-proxy-agent';
+//import { SocksProxyAgent } from 'socks-proxy-agent';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,9 +113,7 @@ class MadouQuCrawler {
     return [];
   }
 
-  isPostInHistory(link) {
-    return this.postsHistory.some(p => p.link === link);
-  }
+
 
   saveSinglePostToHistory(postInfo) {
     try {
@@ -123,6 +121,7 @@ class MadouQuCrawler {
         title: postInfo.title || '',
         link: postInfo.link || '',
         have_magnets: postInfo.magnets && postInfo.magnets.length > 0,
+        have_images: postInfo.image_src !== null,
       };
 
       let history = [];
@@ -174,7 +173,7 @@ class MadouQuCrawler {
       userAgent = session.userAgent;
       acceptLanguage = session.acceptLanguage;
       referer = session.referer;
-      console.log('[会话复用] 使用保存的 UA 和请求头');
+      //console.log('[会话复用] 使用保存的 UA 和请求头');
     } else {
       userAgent = this.getRandomUserAgent();
       acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
@@ -198,7 +197,7 @@ class MadouQuCrawler {
   saveSuccessSession(domain, userAgent, acceptLanguage, referer) {
     this.sessions[domain] = { userAgent, acceptLanguage, referer, lastSuccess: Date.now() };
     this.saveSessions();
-    console.log('[会话保存] 成功保存会话信息');
+    //console.log('[会话保存] 成功保存会话信息');
   }
 
   clearFailedSession(domain) {
@@ -596,13 +595,16 @@ class MadouQuCrawler {
     return [];
   }
 
+  isPostInHistory(post) {
+    return this.postsHistory.some(p => p.link === post.link 
+      && (p.have_images && p.have_magnets && p.title==post.title));
+  }
   isPostComplete(existingPosts, link) {
     const existing = existingPosts.find(p => p.link === link);
     if (!existing) return false;
-    const hasImages = (existing.image_url && existing.image_url.length > 0) ||
-      (existing.image_base64 && existing.image_base64.length > 0) ||
-      (existing.image_src && existing.image_src.length > 0) ||
-      (existing.images && existing.images.length > 0);
+
+    const hasImages = (existing.image_src && existing.image_src.length > 0) 
+                    ||(existing.image_base64 && existing.image_base64.length > 0 && existing.image_base64.startsWith('data:image'));
     const hasMagnets = existing.magnets && existing.magnets.length > 0;
     return hasImages || hasMagnets;
   }
@@ -617,7 +619,7 @@ class MadouQuCrawler {
     return postInfo;
   }
 
-  async crawlAllPostsImages(startPage = 1, maxPages = 0, maxPosts = 1000) {
+  async crawlAllPostsImages(startPage = 1, maxPages = 0, maxPosts=0) {
     console.log('\n=== 开始爬取所有帖子图片和磁力链接 ===');
     console.log(`图片保存目录：${this.imagesDir}`);
 
@@ -658,7 +660,7 @@ class MadouQuCrawler {
 
       const postsToProcess = [];
       for (const post of posts) {
-        if (this.isPostInHistory(post.link)) {
+        if (this.isPostInHistory(post)) {
           historySkipCount++;
           console.log(` [跳过历史记录] ${post.title.substring(0, 30)}...`);
           continue;
@@ -863,11 +865,11 @@ async function main() {
 
     const maxPages = jsonParams && jsonParams.maxPages !== undefined ? jsonParams.maxPages : 1000;
     const maxPosts = jsonParams && jsonParams.maxPosts !== undefined ? jsonParams.maxPosts : 0;
-    const maxPostsLimit = maxPosts > 0 ? maxPosts : 0;
+    const maxPostsLimit = maxPosts > 0 ? maxPosts :1000;
     pageCount = Math.min(pageCount, maxPages);
     console.log(`\n[参数] 最多抓取详情：${pageCount} 页, ${maxPostsLimit > 0 ? maxPostsLimit + ' 个帖子' : '不限帖子数量'}`);
 
-    const allResults = await crawler.crawlAllPostsImages(startPage, pageCount);
+    const allResults = await crawler.crawlAllPostsImages(startPage, pageCount, maxPostsLimit);
 
     console.log(`\n=== 所有任务完成 ===`);
     console.log(`总计：${allResults.length} 个帖子`);
@@ -883,3 +885,12 @@ async function main() {
 main().catch(console.error);
 
 export default MadouQuCrawler;
+
+
+/*
+{  
+   "page": [1120, 1400],
+   "maxPages": 3,
+   "maxPosts": 50
+}
+*/

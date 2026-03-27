@@ -24,15 +24,15 @@ interface PostData {
 // Log helper with timestamp
 function log(message: string) {
   const timestamp = new Date().toLocaleString('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false // 使用 24 小时制
-});
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false // 使用 24 小时制
+  });
   console.log(`[FileWatcher ${timestamp}] ${message}`);
 }
 
@@ -85,10 +85,10 @@ export function setupFileWatcher() {
   log(`Starting file watcher on: ${resultDir}`);
 
   const watcher = chokidar.watch(resultDir, {
-    ignored: /(^|[\/\\])\./, // ignore dot files
+    ignored: (path, stats) => stats?.isFile() && !path.endsWith('.json')&& path.startsWith('.'),
     ignoreInitial: true,
     awaitWriteFinish: {
-      stabilityThreshold: 2000,
+      stabilityThreshold: 30000, // 等待文件稳定30秒，适应大文件写入
       pollInterval: 1000
     }
   });
@@ -102,12 +102,12 @@ export function setupFileWatcher() {
       log(`📝 File modified: ${path.basename(filePath)}`);
       handleFileChange(filePath, "modified");
     })
-    .on("unlink", (filePath) => {
-      log(`🗑️ File deleted: ${path.basename(filePath)}`);
-      handleFileChange(filePath, "deleted");
-    })
+    // .on("unlink", (filePath) => {
+    //   log(`🗑️ File deleted: ${path.basename(filePath)}`);
+    //   handleFileChange(filePath, "deleted");
+    // })
     .on("error", (error) => {
-      log(`❌ Watcher error: ${error.message}`);
+      log(`❌ Watcher error: ${error}`);
     });
 }
 
@@ -171,7 +171,7 @@ async function handleFileChange(filePath: string, eventType: string) {
       }
       //存在 image_src ;
       else if (post.image_src && scriptId) {
-        const sourcePath = path.join(process.cwd(), "crawlerXnode", "result", scriptId, "images", image_src);
+        const sourcePath = path.join(process.cwd(), "crawlerXnode", "result", scriptId, "images", post.image_src);
         const targetDir = path.join(process.cwd(), "data", "images");
         const targetPath = path.join(targetDir, post.image_src);
 
