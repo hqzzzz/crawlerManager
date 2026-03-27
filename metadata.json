@@ -1,0 +1,5 @@
+{
+  "name": "JS Script & Crawler Manager",
+  "description": "Manage and schedule JS scripts, store crawler results, and subscribe to RSS feeds.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,31 @@
+{
+  "name": "rssxnode",
+  "version": "1.0.0",
+  "description": "RSS 爬虫管理平台",
+  "type": "module",
+  "scripts": {
+    "dev": "node crawler\\madouqu-crawler.js -page 1500",
+    "dev:server": "cd server && cross-env NODE_ENV=development npm start",
+    "dev:admin": "cd server/admin-panel && npm run dev",
+    "build": "npm run build:admin",
+    "build:admin": "cd server/admin-panel && npm run build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install"
+  },
+  "keywords": [
+    "rss",
+    "crawler",
+    "admin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "cheerio": "^1.2.0",
+    "https-proxy-agent": "^8.0.0",
+    "socks-proxy-agent": "^9.0.0"
+  }
+}

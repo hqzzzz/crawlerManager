@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  crawler-manager:
+    image: ghcr.io/hqzzzz/crawlermanager:latest
+    ports:
+      - "9119:3000"
+    volumes:
+      # 持久化数据
+      - /root/crawlerRss/data:/app/data
+      # 持久化爬虫结果
+      - /root/crawlerRss/result:/app/crawlerXnode/result
+      # 持久化日志
+      - /root/crawlerRss/logs:/app/crawlerXnode/logs
+      # 挂载爬虫脚本（首次启动会自动从镜像备份复制）
+      - /root/crawlerRss/crawler:/app/crawlerXnode/crawler
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_TYPE=sqlite
+      # 管理员账户 (生产环境请修改)
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      # JWT 密钥 (生产环境请修改为随机字符串)
+      - JWT_SECRET=xK3aRl8Yv1B9Zwq2Qm8Lk5sN4jE3FpRcS9v3Mw1u1jB2Y6tZkU8i2JrG7oQX
+      # 如果使用 MySQL，取消下面的注释并配置相应值
+      # - DB_TYPE=mysql
+      # - DB_HOST=mysql
+      # - DB_USER=root
+      # - DB_PASSWORD=your_password
+      # - DB_NAME=crawler_manager
+      # - DB_PORT=3306
+      # Gemini API Key (可选)
+      # - GEMINI_API_KEY=your_api_key
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints: [node.role == manager]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
