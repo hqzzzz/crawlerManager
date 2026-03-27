@@ -1,5 +1,5 @@
 /**
- * 麻斗图库爬虫 - 支持图片下载
+ * 图库爬虫 - 支持图片下载
  * 目标站点：https://madouqu.sbs/
  * 
  * 功能：
@@ -519,7 +519,7 @@ class MadouQuCrawler {
 
     // 下载第一张图片并生成 image_src
     if (imageUrls.length > 0) {
-      const firstImageUrl = imageUrls[0].replace(/https:\/\/i0\.wp\.com\/[^/]+\//, `https://i0.wp.com/${this.cleanDomain}/`);  //.replace(/(\.jpg|\.jpeg|\.png)(\?.*|$)/i, '$1');
+      const firstImageUrl = imageUrls[0].replace(/https:\/\/i0\.wp\.com\/[^/]+\//, `https://${this.cleanDomain}/`);  //.replace(/(\.jpg|\.jpeg|\.png)(\?.*|$)/i, '$1');
       postInfo.image_url = firstImageUrl;
 
       // 生成文件名并下载
