@@ -23,9 +23,12 @@
     "cross-env": "^7.0.3"
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "axios": "^1.13.6",
+    "better-sqlite3": "^12.8.0",
     "cheerio": "^1.2.0",
     "https-proxy-agent": "^8.0.0",
+    "p-limit": "^7.3.0",
     "socks-proxy-agent": "^9.0.0"
   }
 }

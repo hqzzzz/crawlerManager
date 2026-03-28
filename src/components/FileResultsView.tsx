@@ -529,7 +529,18 @@ export function FileResultsView({ user, apiFetch }: FileResultsViewProps) {
                                   ) : (
                                     <h5 className="font-semibold text-white truncate">{post.title}</h5>
                                   )}
-                                  <p className="text-xs text-zinc-500 mt-1">{post.scriptId.slice(0, 8)} | {post.fileDate}</p>
+                                  <div className="flex flex-wrap gap-3 mt-3">
+                                    {(post as any).sid && (
+                                      <span className="text-xs text-purple-400 bg-purple-500/10 px-2 py-1 rounded border border-purple-500/20">
+                                        <span className="text-zinc-500 mr-1">ID:</span>{(post as any).sid}
+                                      </span>
+                                    )}
+                                    {(post as any).actress && (
+                                      <span className="text-xs text-pink-400 bg-pink-500/10 px-2 py-1 rounded border border-pink-500/20">
+                                        <span className="text-zinc-500 mr-1">Actress:</span>{(post as any).actress}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                               {renderMagnets(post.magnets)}
@@ -540,6 +551,8 @@ export function FileResultsView({ user, apiFetch }: FileResultsViewProps) {
                                   <a href={post.link} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:underline flex items-center gap-1">Source <ExternalLink className="w-3 h-3" /></a>
                                 )}
                               </div>
+
+
                             </div>
                           ))}
                         </div>

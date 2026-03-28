@@ -20,6 +20,7 @@ import { URL } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import pLimit from 'p-limit';
 //import { HttpsProxyAgent } from 'https-proxy-agent';
 //import { SocksProxyAgent } from 'socks-proxy-agent';
 
@@ -27,9 +28,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const _baseURL = `https://madouqu.sbs/`;
 
-
+const MAX_CONCURRENT = 6; // 并发数，建议 3-10
 class MadouQuCrawler {
-  
+
   constructor(config = {}) {
     this.baseURL = config.baseURL || _baseURL;
     this.cleanDomain = this.baseURL.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -309,6 +310,41 @@ class MadouQuCrawler {
     return `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
   }
 
+  // --- 解析帖子详情页  const metaContent = $('meta[name="description"]').attr('content') || '';---
+  extractMetaInfo(metaContent) {
+    console.log(`[解析] 原始 meta sid 内容: "${metaContent}"`);
+    if (!metaContent) return { id: null, title: null, actress: null };
+    let id = null;
+    let title = null;
+    let actress = null;
+    // 1. 定义正则
+    // 番号正则：匹配 (麻豆番号 | 香蕉番號...) : 空格 (可选) 内容 (字母数字横杠)
+    const idRegex = /(麻豆番号|香蕉番號|番號|片號)[:：]\s*([A-Za-z0-9-]+)/i;
+    // 女郎正则：匹配 (麻豆女郎 | 女郎...) : 空格 (可选) 内容 (直到遇到 下載地址 或 结尾)
+    // 注意：这里使用 [\s\S]*? 非贪婪匹配，防止吞掉后面的“下載地址”
+    const actressRegex = /(麻豆女郎|女郎|主演|演員)[:：]\s*([\s\S]*?)(?=\s*(?:下載地址|下載|$))/i;
+    const TITLE_REGEX = /(麻豆片名|杏吧片名|糖心片名|香蕉片名|片名)[:：]\s*(.+?)(?=\s*(?:麻豆女郎|麻豆片名|杏吧片名|糖心片名|香蕉片名|下载地址|下载|$))/i;
+    // 2. 提取番号
+    const idMatch = metaContent.match(idRegex);
+    if (idMatch && idMatch[2]) {
+      id = idMatch[2].trim().replace(" ", '');
+    }
+    const titleMatch = metaContent.match(TITLE_REGEX);
+    if (titleMatch && titleMatch[2]) {
+      title = titleMatch[2].trim().replace("下載地址：", "").replace(" ", '');;
+      if (title.length === 0) title = null;
+    }
+    const actressMatch = metaContent.match(actressRegex);
+    if (actressMatch && actressMatch[2]) {
+      actress = actressMatch[2].trim().replace("下載地址：", "").replace(" ", '');
+    }
+    console.log(`[解析] 提取结果 - ID: "${id}", Title: "${title}", Actress: "${actress}"`);
+    return {
+      sid: id,
+      title: title,
+      actress: actress
+    };
+  }
   /**
    * 从帖子链接提取名称，从图片 URL 提取扩展名
    * 例如：postLink=.../xb1976/, imageUrl=xxx.png -> xb1976.png
@@ -352,31 +388,31 @@ class MadouQuCrawler {
   async downloadImage(imageUrl, filename, options = {}) {
     const { headers, userAgent, acceptLanguage, referer } = this.getHeaders();
     options.headers = {
-        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": this.baseURL,
-        "DNT": "1",
-        "Sec-Fetch-Mode": "no-cors",
-        "Sec-Fetch-Site": "cross-site",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-User": "?1",
-        "Sec-Fetch-Dest": "image",
+      "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Connection": "keep-alive",
+      "Upgrade-Insecure-Requests": "1",
+      "Referer": this.baseURL,
+      "DNT": "1",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-User": "?1",
+      "Sec-Fetch-Dest": "image",
     };
     const finalHeaders = {
       ...headers,
       ...(options.headers || {})
     };
     //const agent =new HttpsProxyAgent('http://10.10.1.10:1080'); //
-    
+
     try {
       const response = await axios({
         url: imageUrl,
         method: options.method || 'GET',
         headers: finalHeaders,
         responseType: 'arraybuffer',
-        
+
         timeout: this.timeout,
         serializeParams: true,
         //httpsAgent: agent,
@@ -423,7 +459,7 @@ class MadouQuCrawler {
       const dateRaw = $el.find('.date, .time, [class*="date"], [class*="time"]').first().text().trim();
       const date = this.convertRelativeDate(dateRaw);
 
-     
+
       if (title && link) {
         posts.push({
           title,
@@ -481,13 +517,15 @@ class MadouQuCrawler {
       image_url: '',
       image_base64: '',
       image_src: null,  // 新增：图片文件名
+      sid: null,
+      actress: null,
       magnets: []
     };
 
     postInfo.title = $('h1, h2, .post-title, .article-title').first().text().trim();
 
     // 优先查找特定图片
-    const $target = $('.wp-image-70864');
+    const $target =$('[class*="wp-image-"]');
     let imageUrls = [];
 
     if ($target.length) {
@@ -559,7 +597,16 @@ class MadouQuCrawler {
 
     postInfo.magnets = magnetLinks;
 
+
+    const metaContent = $('meta[name="description"]').attr('content') || '';
+    let metaInfo = this.extractMetaInfo(metaContent);
+
+    if (!postInfo.sid && postInfo.sid !== "") postInfo.sid = metaInfo.sid;
+    if (!postInfo.actress && postInfo.actress !== "") postInfo.actress = metaInfo.actress;
+
     console.log(`[解析结果] 标题：${postInfo.title || '未知'}, 图片：${postInfo.image_src || '无'}, 磁力链接数：${postInfo.magnets.length}`);
+
+
 
     return postInfo;
   }
@@ -596,15 +643,15 @@ class MadouQuCrawler {
   }
 
   isPostInHistory(post) {
-    return this.postsHistory.some(p => p.link === post.link 
-      && (p.have_images && p.have_magnets && p.title==post.title));
+    return this.postsHistory.some(p => p.link === post.link
+      && (p.have_images && p.have_magnets && p.title == post.title));
   }
   isPostComplete(existingPosts, link) {
     const existing = existingPosts.find(p => p.link === link);
     if (!existing) return false;
 
-    const hasImages = (existing.image_src && existing.image_src.length > 0) 
-                    ||(existing.image_base64 && existing.image_base64.length > 0 && existing.image_base64.startsWith('data:image'));
+    const hasImages = (existing.image_src && existing.image_src.length > 0)
+      || (existing.image_base64 && existing.image_base64.length > 0 && existing.image_base64.startsWith('data:image'));
     const hasMagnets = existing.magnets && existing.magnets.length > 0;
     return hasImages || hasMagnets;
   }
@@ -619,11 +666,59 @@ class MadouQuCrawler {
     return postInfo;
   }
 
-  async crawlAllPostsImages(startPage = 1, maxPages = 0, maxPosts=0) {
+
+  // 并发爬取帖子详情，处理结果并保存
+  async crawlWithPLimit(postsToProcess, existingPosts, maxPosts = 0) {
+    const limit = pLimit(MAX_CONCURRENT); // 设置并发限制
+    let completedCount = 0;
+    let failedCount = 0;
+    let totalProcessed = 0;
+    // 将任务映射为 Promise 数组
+    const tasks = postsToProcess.map((post, index) => {
+      return limit(async () => {
+        if (maxPosts > 0 && totalProcessed >= maxPosts) return; // 检查限制
+
+        try {
+          console.log(`[详情开始] [${index + 1}/${postsToProcess.length}] ${post.title.substring(0, 30)}...`);
+          const postInfo = await this.crawlPost(post);
+
+          if (postInfo) {
+            const fullPostInfo = { ...post, ...postInfo };
+            existingPosts.push(fullPostInfo);
+            if (fullPostInfo.image_url || fullPostInfo.image_base64 || fullPostInfo.magnets?.length > 0) {
+              this.saveSinglePostToHistory(fullPostInfo);
+            }
+            completedCount++;
+          } else {
+            failedCount++;
+          }
+        } catch (error) {
+          failedCount++;
+          console.error(`[详情失败] ${error.message}`);
+        } finally {
+          totalProcessed++;
+        }
+      });
+    });
+    // 等待所有任务完成
+    await Promise.all(tasks);
+    // 最终保存
+    const saveData = {
+      type: 'all_posts',
+      posts: existingPosts,
+      totalPosts: existingPosts.length,
+      crawledAt: new Date().toISOString()
+    };
+    fs.writeFileSync(this.allPostsFile, JSON.stringify(saveData, null, 2), 'utf-8');
+
+    console.log(`完成！成功: ${completedCount}, 失败: ${failedCount}`);
+  }
+
+  async crawlAllPostsImages(startPage = 1, maxPages = 0, maxPosts = 0) {
     console.log('\n=== 开始爬取所有帖子图片和磁力链接 ===');
     console.log(`图片保存目录：${this.imagesDir}`);
 
-    const MAX_CONCURRENT = 6;
+
     const existingPosts = this.loadAllPosts();
 
     let totalProcessed = 0;
@@ -676,72 +771,7 @@ class MadouQuCrawler {
       console.log(`[列表页] 需处理：${postsToProcess.length} 个，跳过：${skipCount + historySkipCount}`);
 
       if (postsToProcess.length > 0) {
-        const queue = [...postsToProcess];
-        const activeTasks = new Map();
-
-        const processPost = async (post, index) => {
-          console.log(`\n[详情开始] [${index + 1}/${postsToProcess.length}] ${post.title.substring(0, 40)}...`);
-
-          try {
-
-            const postInfo = await this.crawlPost(post);
-            if (postInfo) {
-              const fullPostInfo = { ...post, ...postInfo };
-
-              const existingIndex = existingPosts.findIndex(p => p.link === post.link);
-              if (existingIndex >= 0) {
-                existingPosts[existingIndex] = fullPostInfo;
-              } else {
-                existingPosts.push(fullPostInfo);
-              }
-
-              // 保存 all_posts 文件
-              fs.writeFileSync(this.allPostsFile, JSON.stringify({
-                type: 'all_posts',
-                posts: existingPosts,
-                totalPosts: existingPosts.length,
-                crawledAt: new Date().toISOString()
-              }, null, 2), 'utf-8');
-
-              // 保存历史记录
-              if (fullPostInfo.image_url || fullPostInfo.image_base64 || fullPostInfo.image_src || fullPostInfo.magnets?.length > 0) {
-                this.saveSinglePostToHistory(fullPostInfo);
-              }
-
-              completedCount++;
-              console.log(`[详情完成] [${index + 1}/${postsToProcess.length}] 成功 (${completedCount}/${postsToProcess.length})`);
-            } else {
-              failedCount++;
-            }
-          } catch (error) {
-            failedCount++;
-            console.log(`[详情失败] ${error.message}`);
-          } finally {
-            activeTasks.delete(post.link);
-          }
-
-          totalProcessed++;
-          if (maxPosts > 0 && totalProcessed >= maxPosts) {
-            console.log(`[达到 maxPosts 限制] 停止爬取`);
-            return;
-          }
-        };
-
-        const processQueue = async () => {
-          while (queue.length > 0 || activeTasks.size > 0) {
-            while (queue.length > 0 && activeTasks.size < MAX_CONCURRENT) {
-              const post = queue.shift();
-              const index = postsToProcess.indexOf(post);
-              const currentTask = processPost(post, index);
-              activeTasks.set(post.link, currentTask);
-            }
-            if (activeTasks.size > 0) {
-              await Promise.race(activeTasks.values());
-            }
-          }
-        };
-
-        await processQueue();
+        await this.crawlWithPLimit(postsToProcess, existingPosts);
       }
 
       if (maxPosts > 0 && totalProcessed >= maxPosts) break;
@@ -825,7 +855,6 @@ async function main() {
         break;
       }
     }
-
     if (jsonParams) {
       if (jsonParams.page && Array.isArray(jsonParams.page)) {
         if (jsonParams.page[0] !== undefined) pageArgs = [String(jsonParams.page[0])];
@@ -840,6 +869,15 @@ async function main() {
       }
       if (jsonParams.maxPosts !== undefined) {
         console.log(`[参数] 最多抓取详情：${jsonParams.maxPosts} 个`);
+      }
+      if (jsonParams.post !== undefined) {
+        const postingMode_url = crawler.toAbsoluteUrl(jsonParams.post);
+        console.log(`[参数] 贴子模式 URL: ${postingMode_url}`);
+        let _post = { link: postingMode_url, title: '单贴模式', image: null, date: null };
+        let postsToProcess = [];
+        postsToProcess.push(_post);
+        await crawler.crawlWithPLimit(postsToProcess, [], 2);
+        return;
       }
     }
 
@@ -865,7 +903,7 @@ async function main() {
 
     const maxPages = jsonParams && jsonParams.maxPages !== undefined ? jsonParams.maxPages : 1000;
     const maxPosts = jsonParams && jsonParams.maxPosts !== undefined ? jsonParams.maxPosts : 0;
-    const maxPostsLimit = maxPosts > 0 ? maxPosts :1000;
+    const maxPostsLimit = maxPosts > 0 ? maxPosts : 1000;
     pageCount = Math.min(pageCount, maxPages);
     console.log(`\n[参数] 最多抓取详情：${pageCount} 页, ${maxPostsLimit > 0 ? maxPostsLimit + ' 个帖子' : '不限帖子数量'}`);
 
@@ -888,9 +926,8 @@ export default MadouQuCrawler;
 
 
 /*
-{  
-   "page": [1120, 1400],
-   "maxPages": 3,
-   "maxPosts": 50
-}
+
+
+--json { "page": [1120, 1400],"maxPages": 3,"maxPosts": 50}
+
 */

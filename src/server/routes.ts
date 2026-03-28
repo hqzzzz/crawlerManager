@@ -330,17 +330,17 @@ export function setupRoutes(app: express.Application) {
       let rows;
       if (ownerId === "admin") {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [limit, offset]
         );
       } else if (ownerId) {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results WHERE ownerId = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results WHERE ownerId = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [ownerId, limit, offset]
         );
       } else {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results WHERE ownerId = 'public-user' ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results WHERE ownerId = 'public-user' ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [limit, offset]
         );
       }
@@ -402,7 +402,7 @@ export function setupRoutes(app: express.Application) {
     try {
       const id = req.params.id;
       const updates = req.body;
-      const allowedFields = ["scriptId", "ownerId", "post", "title", "link", "image", "image_src", "date", "image_url", "image_base64", "magnets", "raw", "timestamp"];
+      const allowedFields = ["scriptId", "ownerId", "post", "title", "link", "image", "image_src", "date", "image_url", "image_base64", "sid", "actress", "magnets", "raw", "timestamp"];
 
       const validUpdates: Record<string, any> = {};
       for (const [key, value] of Object.entries(updates)) {
@@ -431,7 +431,7 @@ export function setupRoutes(app: express.Application) {
   // Import result to database - supports image_src
   app.post("/api/results/import", async (req, res) => {
     try {
-      const { scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp } = req.body;
+      const { scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp } = req.body;
 
       // Check if a record with the same link exists
       let existing: any[] = [];
@@ -458,15 +458,15 @@ export function setupRoutes(app: express.Application) {
       if (existing.length > 0 && link) {
         // Update existing record
         await queryRun(
-          "UPDATE results SET scriptId = ?, ownerId = ?, post = ?, title = ?, link = ?, image = ?, image_src = ?, date = ?, image_url = ?, image_base64 = ?, magnets = ?, raw = ?, timestamp = ? WHERE id = ?",
-          [scriptId || 'unknown', ownerId || 'public-user', post || null, title || '', link || null, image || null, image_src || null, date || null, image_url || null, image_base64 || null, magnets || null, raw || null, timestamp || new Date().toISOString(), existing[0].id]
+          "UPDATE results SET scriptId = ?, ownerId = ?, post = ?, title = ?, link = ?, image = ?, image_src = ?, date = ?, image_url = ?, image_base64 = ?, sid = ?, actress = ?, magnets = ?, raw = ?, timestamp = ? WHERE id = ?",
+          [scriptId || 'unknown', ownerId || 'public-user', post || null, title || '', link || null, image || null, image_src || null, date || null, image_url || null, image_base64 || null, sid || null, actress || null, magnets || null, raw || null, timestamp || new Date().toISOString(), existing[0].id]
         );
         res.json({ success: true, action: 'updated', id: existing[0].id });
       } else {
         // Insert new record
         await queryRun(
-          "INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [scriptId || 'unknown', ownerId || 'public-user', post || null, title || '', link || null, image || null, image_src || null, date || null, image_url || null, image_base64 || null, magnets || null, raw || null, timestamp || new Date().toISOString()]
+          "INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [scriptId || 'unknown', ownerId || 'public-user', post || null, title || '', link || null, image || null, image_src || null, date || null, image_url || null, image_base64 || null, sid || null, actress || null, magnets || null, raw || null, timestamp || new Date().toISOString()]
         );
         res.json({ success: true, action: 'inserted' });
       }
@@ -550,7 +550,7 @@ export function setupRoutes(app: express.Application) {
 
         // Insert into database (image_base64 is always null)
         await queryRun(
-          `INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             scriptId,
             post.ownerId || 'public-user',
@@ -562,6 +562,8 @@ export function setupRoutes(app: express.Application) {
             post.date || null,
             post.image_url || null,
             null, // image_base64 is always null
+            post.sid || null,
+            post.actress || null,
             post.magnets || null,
             typeof post.raw === 'string' ? post.raw : JSON.stringify(post.raw || {}),
             post.timestamp || new Date().toISOString()
@@ -754,17 +756,17 @@ export function setupRoutes(app: express.Application) {
       let rows;
       if (ownerId === "admin") {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [limit, offset]
         );
       } else if (ownerId) {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results WHERE ownerId = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results WHERE ownerId = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [ownerId, limit, offset]
         );
       } else {
         rows = await queryAll(
-          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp FROM results WHERE ownerId = 'public-user' ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+          "SELECT id, scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, sid, actress, magnets, raw, timestamp FROM results WHERE ownerId = 'public-user' ORDER BY timestamp DESC LIMIT ? OFFSET ?",
           [limit, offset]
         );
       }
@@ -824,6 +826,8 @@ export function setupRoutes(app: express.Application) {
                     date: post.date || null,
                     image_url: post.image_url || null,
                     image_base64: post.image_base64 || null,
+                    sid: post.sid || null,
+                    actress: post.actress || null,
                     magnets: post.magnets || null,
                     raw: typeof post.raw === 'string' ? post.raw : JSON.stringify(post.raw || {}),
                     timestamp: post.timestamp || new Date().toISOString(),

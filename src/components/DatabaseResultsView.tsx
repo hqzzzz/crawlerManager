@@ -29,7 +29,7 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
 
-  const LIMIT = 50;
+  const LIMIT = 100;
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollPositionKey = `db-scroll-${user?.uid || 'admin'}`;
   const savedScrollTop = useRef<number>(0);
@@ -102,6 +102,7 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
         setHasMore(data.length === LIMIT);
       }
     } catch (e) {
+      setHasMore(false);
       console.error("Failed to fetch results", e);
     } finally {
       setLoading(false);
@@ -410,8 +411,20 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
           })}
 
           <h4 className="text-lg font-bold text-white mb-2 line-clamp-2">{result.title}</h4>
-          <p className="text-sm text-zinc-400 mb-4 line-clamp-3">{result.post}</p>
 
+          <div className="flex flex-wrap gap-2 mt-2">
+            {(result as any).sid && (
+              <span className="text-xs text-purple-400 bg-purple-500/10 px-2 py-1 rounded border border-purple-500/20">
+                <span className="text-zinc-500 mr-1">ID:</span>{(result as any).sid}
+              </span>
+            )}
+            {(result as any).actress && (
+              <span className="text-xs text-pink-400 bg-pink-500/10 px-2 py-1 rounded border border-pink-500/20">
+                <span className="text-zinc-500 mr-1">Actress:</span>{(result as any).actress}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-zinc-400 mb-4 line-clamp-3">{result.post}</p>
           {renderMagnets((result as any).magnets)}
 
           <div className="flex items-center justify-between text-xs text-zinc-500 mt-4 pt-3 border-t border-zinc-800">

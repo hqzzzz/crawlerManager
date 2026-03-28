@@ -17,6 +17,8 @@ interface PostData {
   post?: string;
   raw?: any;
   timestamp?: string;
+  sid: null;
+  actress: null;
   scriptId?: string;
   ownerId?: string;
 }
@@ -196,7 +198,7 @@ async function handleFileChange(filePath: string, eventType: string) {
           `UPDATE results SET 
             post = ?, title = ?, image = ?, image_src = ?,   date = ?, 
             image_url = ?, image_base64 = ?, magnets = ?, 
-            raw = ?, timestamp = ?
+            raw = ?, timestamp = ?,sid = ?, actress = ?
            WHERE link = ?`,
           [
             post.post || null,
@@ -209,6 +211,8 @@ async function handleFileChange(filePath: string, eventType: string) {
             post.magnets || null,
             typeof post.raw === "string" ? post.raw : JSON.stringify(post),
             post.timestamp || new Date().toISOString(),
+              post.sid || null,
+              post.actress || null,
             link
           ]
         );
@@ -216,7 +220,7 @@ async function handleFileChange(filePath: string, eventType: string) {
       } else {
         // Insert new post
         await queryRun(
-          `INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw, timestamp, sid, actress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             scriptId,
             ownerId,
@@ -230,7 +234,9 @@ async function handleFileChange(filePath: string, eventType: string) {
             post.image_base64 || null,
             post.magnets || null,
             typeof post.raw === "string" ? post.raw : JSON.stringify(post),
-            post.timestamp || new Date().toISOString()
+            post.timestamp || new Date().toISOString(),
+            post.sid || null,
+            post.actress || null
           ]
         );
         syncedCount++;

@@ -7,6 +7,9 @@ import { CookieJar } from "tough-cookie";
 import { v4 as uuidv4 } from "uuid";
 import { queryRun } from "./db.js";
 
+import Database from 'better-sqlite3';
+import pLimit from 'p-limit';
+
 const LOGS_DIR = path.join(process.cwd(), "crawlerXnode", "logs");
 
 // 确保日志目录存在
@@ -188,7 +191,16 @@ export async function executeScript(
       if (moduleName === "path") return path;
       if (moduleName === "fs") return context.fs;
       if (moduleName === "uuid") return { v4: uuidv4 };
-
+      if (moduleName === "p-limit") return pLimit;
+      if (moduleName === "better-sqlite3") return Database;
+      try {
+        const nodeModulesPath = path.resolve(process.cwd(), "crawlerXnode", "node_modules", moduleName);
+        if (fs.existsSync(nodeModulesPath)) {
+          return require(nodeModulesPath);
+        }
+      } catch (e) {
+        // 忽略加载错误，继续尝试其他方式                                                                    
+      }
       const localPath = path.resolve(process.cwd(), "crawlerXnode", "src", moduleName.endsWith(".js") ? moduleName : `${moduleName}.js`);
       if (fs.existsSync(localPath)) {
         const moduleCode = fs.readFileSync(localPath, "utf-8");
@@ -250,99 +262,6 @@ export async function executeScript(
         if (!fullPath.startsWith(process.cwd())) throw new Error("Access denied");
         return fs.statSync(fullPath, options);
       }
-    },
-    saveResult: async (data: {
-      post?: string;
-      title?: string;
-      link?: string;
-      image?: string;
-      image_src?: string;  // 新增：图片文件名
-      date?: string;
-      image_url?: string;
-      image_base64?: string;
-      magnets?: string;
-      raw?: any;
-    }) => {
-      const link = data.link || null;
-
-      // 检查记录是否已存在（基于 scriptId + link）
-      if (link) {
-        const existing: any[] = await queryRun(
-          "SELECT id, image_src FROM results WHERE link = ?",
-          [link]
-        ) as any[];
-
-        if (existing.length > 0) {
-          // 处理 image_src：如果提供，从 /result/ 复制到 /data/images/
-          if (data.image_src && scriptId) {
-            const sourcePath = path.join(process.cwd(), "crawlerXnode", "result", scriptId, "images", data.image_src);
-            const targetDir = path.join(process.cwd(), "data", "images");
-            const targetPath = path.join(targetDir, data.image_src);
-
-            if (fs.existsSync(sourcePath)) {
-              if (!fs.existsSync(targetDir)) {
-                fs.mkdirSync(targetDir, { recursive: true });
-              }
-              // 复制文件到数据存储
-              fs.copyFileSync(sourcePath, targetPath);
-              console.log(`[saveResult] Copied image to data storage: ${data.image_src}`);
-            }
-          }
-
-          // 更新现有记录
-          await queryRun(
-            `UPDATE results SET post = ?, title = ?, image = ?, image_src = ?, date = ?, image_url = ?, image_base64 = ?, magnets = ?, raw = ? WHERE link = ?`,
-            [
-              data.post || null,
-              data.title || null,
-              data.image || null,
-              data.image_src || null,  // 新增
-              data.date || null,
-              data.image_url || null,
-              data.image_base64 || null,
-              data.magnets || null,
-              JSON.stringify(data.raw || {}),
-              link
-            ]
-          );
-          return;
-        }
-      }
-
-      // 处理 image_src：如果提供，从 /result/ 复制到 /data/images/
-      if (data.image_src && scriptId) {
-        const sourcePath = path.join(process.cwd(), "crawlerXnode", "result", scriptId, "images", data.image_src);
-        const targetDir = path.join(process.cwd(), "data", "images");
-        const targetPath = path.join(targetDir, data.image_src);
-
-        if (fs.existsSync(sourcePath)) {
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-          // 复制文件到数据存储
-          fs.copyFileSync(sourcePath, targetPath);
-          console.log(`[saveResult] Copied image to data storage: ${data.image_src}`);
-        }
-      }
-
-      // 插入新记录
-      await queryRun(
-        `INSERT INTO results (scriptId, ownerId, post, title, link, image, image_src, date, image_url, image_base64, magnets, raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          scriptId,
-          ownerId,
-          data.post || null,
-          data.title || null,
-          link,
-          data.image || null,
-          data.image_src || null,  // 新增
-          data.date || null,
-          data.image_url || null,
-          data.image_base64 || null,
-          data.magnets || null,
-          JSON.stringify(data.raw || {})
-        ]
-      );
     },
     fetch: async (url: string, options?: any) => {
       const response = await fetch(url, options);

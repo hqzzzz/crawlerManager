@@ -43,6 +43,8 @@ export async function initDB() {
         date VARCHAR(255),
         image_url VARCHAR(1000),
         image_base64 TEXT,
+        sid TEXT,
+        actress TEXT,
         magnets TEXT,
         raw TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -90,6 +92,10 @@ export async function initDB() {
       }
     }
 
+    // Add new columns here - 在这里添加新字段示例:
+    // await addColumnIfNotExists("results", "new_field_name", "VARCHAR(255)", "'default_value'");
+    // await addColumnIfNotExists("scripts", "description", "TEXT");
+
   } else {
     const dbPath = path.join(process.cwd(), "data", "crawler.db");
     sqliteDb = new Database(dbPath);
@@ -120,6 +126,8 @@ export async function initDB() {
         date TEXT,
         image_url TEXT,
         image_base64 TEXT,
+        sid TEXT,
+        actress TEXT,
         magnets TEXT,
         raw TEXT,
         timestamp TEXT DEFAULT CURRENT_TIMESTAMP
@@ -157,15 +165,20 @@ export async function initDB() {
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS idx_rss_subscriptions_ownerId ON rss_subscriptions(ownerId)`);
     sqliteDb.exec(`CREATE INDEX IF NOT EXISTS idx_rss_keys_key ON rss_keys(key)`);
 
-    // Add image_src column if not exists (migration)
+    // Add new columns here - 在这里添加新字段示例:
+    // await addColumnIfNotExists("results", "description", "TEXT");
     try {
-      sqliteDb.exec(`ALTER TABLE results ADD COLUMN image_src TEXT`);
+      //sqliteDb.exec(`ALTER TABLE results ADD COLUMN image_src TEXT`);
+      await addColumnIfNotExists("results", "image_src", "TEXT");
+      await addColumnIfNotExists("results", "description", "TEXT");
+      await addColumnIfNotExists("results", "actress", "TEXT");
     } catch (e: any) {
       // Column may already exist
       if (!e.message?.includes("duplicate column")) {
         console.warn("[DB] Migration warning:", e.message);
       }
     }
+
   }
 }
 
@@ -175,6 +188,66 @@ function adaptQuery(sql: string): string {
     return sql.replace(/datetime\('now'\)/g, "NOW()");
   }
   return sql;
+}
+
+/**
+ * 检查列是否存在，不存在则添加
+ * @param tableName 表名
+ * @param columnName 列名
+ * @param columnType 列类型 (如 VARCHAR(255), TEXT, INT, DATETIME 等)
+ * @param defaultValue 默认值 (可选)
+ */
+export async function addColumnIfNotExists(
+  tableName: string,
+  columnName: string,
+  columnType: string,
+  defaultValue?: string
+) {
+  const hasColumn = await checkColumnExists(tableName, columnName);
+  if (!hasColumn) {
+    let alterSql = `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`;
+    if (defaultValue !== undefined) {
+      alterSql += ` DEFAULT ${defaultValue}`;
+    }
+    try {
+      if (DB_TYPE === "mysql") {
+        await mysqlPool.query(alterSql);
+        console.log(`[DB] Column added: ${columnName} to ${tableName}`);
+      } else {
+        sqliteDb.exec(alterSql);
+        console.log(`[DB] Column added: ${columnName} to ${tableName}`);
+      }
+    } catch (e: any) {
+      if (!e.message?.includes("Duplicate column") && !e.message?.includes("duplicate column")) {
+        console.warn(`[DB] Warning adding column ${columnName}:`, e.message);
+      }
+    }
+  } else {
+    console.log(`[DB] Column already exists: ${columnName} in ${tableName}`);
+  }
+}
+
+/**
+ * 检查列是否存在
+ * @param tableName 表名
+ * @param columnName 列名
+ */
+export async function checkColumnExists(tableName: string, columnName: string): Promise<boolean> {
+  try {
+    if (DB_TYPE === "mysql") {
+      const [rows]: any = await mysqlPool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+        [process.env.DB_NAME || "crawler_manager", tableName, columnName]
+      );
+      return rows.length > 0;
+    } else {
+      const rows = sqliteDb.prepare(`PRAGMA table_info(${tableName})`).all() as any[];
+      return rows.some((col) => col.name === columnName);
+    }
+  } catch (e: any) {
+    console.warn(`[DB] Error checking column ${columnName}:`, e.message);
+    return false;
+  }
 }
 
 export async function queryAll(sql: string, params: any[] = []) {
