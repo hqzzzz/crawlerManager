@@ -7,22 +7,39 @@ interface NavButtonProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  isCollapsed?: boolean;
 }
 
-export function NavButton({ active, onClick, icon, label }: NavButtonProps) {
+export function NavButton({ active, onClick, icon, label, isCollapsed }: NavButtonProps) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
-        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all relative group",
-        active ? "bg-emerald-500/10 text-emerald-500" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+        "w-full h-10 rounded-xl flex items-center gap-3 px-3 transition-all relative",
+        active
+          ? "bg-emerald-500/15 text-emerald-500"
+          : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800",
+        isCollapsed ? "justify-center" : "justify-start"
       )}
+      title={label}
     >
       {icon}
-      <span className="absolute left-full ml-4 px-2 py-1 bg-zinc-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-        {label}
-      </span>
-      {active && <motion.div layoutId="activeNav" className="absolute left-0 w-1 h-6 bg-emerald-500 rounded-r-full" />}
+      {!isCollapsed && (
+        <motion.span
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="whitespace-nowrap text-sm font-medium"
+        >
+          {label}
+        </motion.span>
+      )}
+      {active && !isCollapsed && (
+        <motion.div
+          layoutId="activeNav"
+          className="absolute left-0 w-1 h-5 bg-emerald-500 rounded-r-full"
+        />
+      )}
     </button>
   );
 }

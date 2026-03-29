@@ -671,7 +671,7 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
                         <span className="text-zinc-500">{expandedTasks[scriptId] !== false ? "▼" : "▶"}</span>
                       </div>
                       {expandedTasks[scriptId] !== false && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pl-4 border-l-2 border-zinc-800/50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pl-4 border-l-2 border-zinc-800/50">
                           {taskResults.map((result) => (
                             <ResultCard key={result.id} result={result} scriptId={scriptId} />
                           ))}
@@ -687,7 +687,7 @@ export function DatabaseResultsView({ user, apiFetch }: DatabaseResultsViewProps
                   {filteredAndSortedResults.length === 0 && results.length === 0 && !loading && (
                     <div className="text-center py-12 text-zinc-500">No records in database.</div>
                   )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {filteredAndSortedResults.map((result) => (
                       <ResultCard key={result.id} result={result} scriptId={result.scriptId} />
                     ))}

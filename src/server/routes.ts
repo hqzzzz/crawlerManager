@@ -7,6 +7,7 @@ import Parser from "rss-parser";
 import { Feed } from "feed";
 import { queryAll, queryRun } from "./db.js";
 import { executeScript } from "./crawler-engine.js";
+import { url } from "inspector";
 
 const parser = new Parser();
 
@@ -56,17 +57,26 @@ function generateRSSKey(): string {
 }
 
 // Rss密钥认证中间件
-function authenticateRSSKey(req: any, res: any, next: any) {
+async function authenticateRSSKey(req: any, res: any, next: any) {
   const apiKey = req.headers['x-rss-key'] || req.query.key;
-  if (!apiKey) {
-    return res.status(401).json({ success: false, message: "API key required" });
+  try {
+    if (!apiKey) {
+      return res.status(401).json({ success: false, message: "API key required" });
+    }
+    const keys = await queryAll("SELECT * FROM rss_keys WHERE key = ?", [apiKey as string]) as unknown as any[];
+    if (!keys || keys.length === 0) {
+      return res.status(403).json({ success: false, message: "Invalid API key" });
+    }
+    if (apiKey === keys[0].key) {
+      next();
+    } else {
+      return res.status(403).json({ success: false, message: "Invalid API key" });
+    }
   }
-  const keys = queryAll("SELECT * FROM rss_keys WHERE key = ?", [apiKey as string]) as unknown as any[];
-  if (!keys || keys.length === 0) {
+  catch (e: any) {
+    console.error(`[RSS Key Auth] Error occurred: ${e.message}`);
     return res.status(403).json({ success: false, message: "Invalid API key" });
   }
-  req.rssKey = keys[0];
-  next();
 }
 
 export function setupRoutes(app: express.Application) {
@@ -130,7 +140,7 @@ export function setupRoutes(app: express.Application) {
         const results = await queryAll("SELECT id, title, image_src FROM results WHERE image_src = ? AND scriptId = ?", [safeFilename, safeScriptId]);
         if (results.length === 0) {
           console.log(`🔍 scriptId="${safeScriptId}" image_src="${safeFilename}" 未找到匹配的记录。`);
-        }else if(results.length > 0) {
+        } else if (results.length > 0) {
           results.forEach(async (element: any) => {
             await queryRun("UPDATE results SET image_src = NULL WHERE id = ? AND scriptId = ?", [element.id, safeScriptId]);
             console.log(`✅ 已将 scriptId="${safeScriptId}" id="${element.id}" 的 image_src 字段设置为 NULL。`);
@@ -975,126 +985,149 @@ export function setupRoutes(app: express.Application) {
   // RSS Feed (需要认证) - 必须在 /api/feed/:scriptId 之前定义（具体路由优先）
   app.get("/api/feed/rss", authenticateRSSKey, async (req: any, res: any) => {
     try {
-      const keywords = (req.query.keywords || "").toString();
+      // 1. 获取并清洗关键词
+      const rawKeywords = (req.query.keywords || "").toString();
+      // 【核心修复】使用 /\s+/ 替代 /[\s+]+/
+      // 逻辑：按一个或多个空白字符分割，自动去除多余空格
+      const keywordArray = rawKeywords
+        .split(/\s+/)
+        .map((k: string) => k.trim())
+        .filter((k: string) => k.length > 0); // 确保过滤掉空字符串
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      console.log(`[RSS Feed] Querying results with keywords: "${keywords}"`);
+
+      // 记录日志：方便运维排查用户搜索了什么
+      console.log(`[RSS Feed] Incoming keywords: "${rawKeywords}" | Parsed count: ${keywordArray.length}`);
+
       let rows: any[] = [];
 
       try {
-        if (keywords.trim()) {
-          // 有关键词：在 SQL 层面过滤，搜索 title 和 post 字段
-          const keywordArray = keywords
-            .split(/[\s+]+/)
-            .map((k: string) => k.trim())
-            .filter((k: string) => k);
-          console.log(`[RSS Feed] Filtering by keywords in SQL:`, keywordArray);
+        if (keywordArray.length > 0) {
+          // 2. 构建安全的 SQL 查询
+          // 逻辑：(title LIKE %kw1% OR post LIKE %kw1%) AND (title LIKE %kw2% OR post LIKE %kw2%) ...
+          // 注意：这里必须使用参数化查询，防止 SQL 注入
 
-          // 构建 LIKE 条件：每个关键词都需要匹配 (AND)，搜索 title 或 post (OR)
           const likeConditions = keywordArray
-            .map(() => "(title LIKE ? OR post LIKE ?)")
+            .map(() => "(title LIKE ? OR actress LIKE ? OR sid LIKE ?)")
             .join(" AND ");
-          const likeParams = keywordArray.flatMap((kw) => [`%${kw}%`, `%${kw}%`]);
-          const sql = `SELECT * FROM results WHERE ${likeConditions} ORDER BY timestamp DESC LIMIT 100`;
+
+          // 生成参数列表：每个关键词对应两个参数 (%kw%, %kw%)
+          const likeParams = keywordArray.flatMap((kw) => [`%${kw}%`, `%${kw}%`, `%${kw}%`]);
+
+          const sql = `SELECT * FROM results WHERE ${likeConditions} ORDER BY timestamp DESC LIMIT 300`;
+
+          console.log(`[RSS Feed] Executing SQL with ${keywordArray.length} keywords...`);
+
+
           rows = await queryAll(sql, likeParams);
-          console.log(
-            `[RSS Feed] SQL query with keywords succeeded, found ${rows.length} results`
-          );
+
+          console.log(`[RSS Feed] Found ${rows.length} results matching keywords.`);
         } else {
-          // 无关键词：返回最新的 100 条
-          rows = await queryAll(
-            "SELECT * FROM results ORDER BY timestamp DESC LIMIT 100"
-          );
-          console.log(
-            `[RSS Feed] Query succeeded, found ${rows.length} results`
-          );
+          // 无关键词：返回最新数据
+          console.log(`[RSS Feed] No keywords provided, returning latest 300 results.`);
+          rows = await queryAll("SELECT * FROM results ORDER BY timestamp DESC LIMIT 300");
         }
       } catch (queryError: any) {
-        console.error(`[RSS Feed] Query error: ${queryError.message}`);
-        console.error(`[RSS Feed] Error stack: ${queryError.stack}`);
+        console.error(`[RSS Feed] Database Error: ${queryError.message}`);
+        // 生产环境建议不要直接返回堆栈信息，避免泄露数据库结构
         return res.status(500).json({
           success: false,
-          error: `Database query error: ${queryError.message}`,
+          error: "Internal database error. Please contact support."
         });
       }
-
-      // 已在 SQL 层面过滤，无需再次过滤
       const filteredRows = rows;
-
+      // 3. 构建 RSS Feed
       const feed = new Feed({
-        title: "Crawler RSS Feed",
-        description: "Latest crawled posts with keyword filtering",
-        id: "crawler-rss",
-        link: baseUrl,
+        title: "RSS Feed",
+        description: "RSS Feed keyword filtering",
+        link: baseUrl + "/api/feed/rss",
         copyright: "All rights reserved",
         updated: new Date(),
-        generator: "Crawler Manager RSS",
       });
 
       filteredRows.forEach((data: any) => {
+        let image = "";
         let enclosure: any = undefined;
 
-        // 检查 enclosure URL 的有效性
-        let enclosureUrl = "";
+        // 处理图片逻辑
         if (data.image_src) {
-          // 使用完整 URL
-          enclosureUrl = `${baseUrl}/api/image/${data.scriptId}/${data.image_src}`;
-          // 确保 image_src 不是空字符串或无效值
-          if (!data.image_src || data.image_src.startsWith('http')) {
-            enclosureUrl = "";
+          if (data.image_src.startsWith('http')) {
+            image = data.image_src;
+          } else {
+            image = `${baseUrl}/api/image/${data.scriptId}/${data.image_src}`;
           }
-        } else if (data.image_base64) {
-          enclosureUrl = `data:image/jpeg;base64,${data.image_base64}`;
-        } else if (data.image_url) {
-          enclosureUrl = data.image_url;
+        } else if (data.image_url && data.image_url.startsWith('http')) {
+          image = data.image_url;
         }
 
-        if (enclosureUrl) {
+        if (image) {
           enclosure = {
-            url: enclosureUrl,
+            url: image,
             type: "image/jpeg",
-            length: data.image_base64 ? data.image_base64.length : 0,
-          };
+            length: 0, // 可选，表示媒体文件的大小（字节）  
+          }
         }
 
-        // 确保 link 是有效的 URL，如果没有则使用 id 作为占位符
-        const validLink = data.link && data.link.startsWith('http') ? data.link : `#${data.id}`;
+        const MAGNET_REGEX = /magnet:\?xt=urn:btih:[a-fA-F0-9]{40}(?:[&?][^"'\s,;]*)*/i;
+        // ... 在循环中 ...
+        // 1. 直接正则提取 (整定)
+        let cleanMagnet = MAGNET_REGEX.test(String(data.magnets))
+          ? String(data.magnets).match(MAGNET_REGEX)[0]
+          : null;
 
-        // 调试日志：输出 problematic 数据
-        if (!data.link || !data.link.startsWith('http')) {
-          console.log(`[RSS Feed] Warning: Invalid link for item ${data.id}, using fallback: ${validLink}`);
-          console.log(`[RSS Feed] Original link value: "${data.link}"`);
-        }
+
+        // 修正链接逻辑：确保 URL 有效
+        const validLink = data.magnets || data.link;
+
+
+        // 构建 RSS Item
+        const htmlContent = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 15px; background-color: #fff; border: 1px solid #ddd; border-radius: 8px;">
+  
+  <!-- 1. 标题 -->
+  <h3 style="margin-top: 0; color: #333; font-size: 18px; border-bottom: 2px solid #2196F3; padding-bottom: 10px;">
+    ${data.title}
+  </h3>
+  <!-- 2. 封面图 (如果有) -->
+  ${image ? `
+  <div style="margin-bottom: 15px; text-align: center;">
+    <img src="${image}" alt="Cover" style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+  </div>` : ''}
+  <!-- 4. 磁力链接区域 (核心) -->
+  <div style="margin-top: 20px; padding: 15px; background-color: #f0f7ff; border-left: 5px solid #2196F3; border-radius: 4px;">
+    <div style="font-weight: bold; color: #2196F3; margin-bottom: 8px;">
+      🚀 点击以下链接添加到下载任务
+    </div>
+    <a href="${data.magnets}" 
+       style="display: block; word-break: break-all; color: #0056b3; text-decoration: none; font-family: monospace; background: #fff; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
+      ${data.magnets}
+    </a>
+    <div style="margin-top: 5px; font-size: 12px; color: #888;">
+      提示：点击链接将自动唤起你的 BT 客户端
+    </div>
+  </div>
+</div>
+`;
 
         feed.addItem({
           title: data.title || "No Title",
           id: data.id.toString(),
           link: validLink,
-          description: data.post || "",
-          content: `
-            <div>
-              <p>${data.post || ""}</p>
-              ${enclosure
-              ? `<img src="${enclosure.url}" style="max-width:100%;" />`
-              : ""
-            }
-              ${data.magnets
-              ? `<p><strong>磁力链接:</strong><br/>${String(
-                data.magnets
-              ).replace(/\n/g, "<br/>")}</p>`
-              : ""
-            }
-            </div>
-          `,
-          date: data.timestamp ? new Date(data.timestamp) : new Date(),
+          description: (() => {
+            return htmlContent;
+          })(),
           enclosure: enclosure,
+          date: data.timestamp ? new Date(data.timestamp) : new Date(),
         });
       });
 
-      res.set("Content-Type", "application/rss+xml");
+      res.set("Content-Type", "application/rss+xml; charset=utf-8");
       res.send(feed.rss2());
+
     } catch (error: any) {
-      console.error(`[RSS Feed Error]: ${error.message}`);
-      res.status(500).send(error.message);
+      console.error(`[RSS Feed] Critical Error: ${error.message}`);
+      // 统一错误处理
+      res.status(500).send("Internal Server Error");
     }
   });
 
